@@ -1,0 +1,70 @@
+name: Docker build image
+
+on:
+  workflow_dispatch:
+  schedule: 
+    - cron: '0 0 * * 0'
+  push:
+    branches:
+      - main  # Trigger CI on main branch
+      - bmcclure/main
+  pull_request:
+    branches:
+      - main  # Trigger gated pipeline on PR to main
+      - bmcclure/main
+
+env:
+  IMAGE_NAME: pa11y_dashboard
+
+jobs:
+  build-and-push-image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to the Github Container registry
+        uses: docker/login-action@343f7c4344506bcbf9b4de18042ae17996df046d
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Login to DockerHub
+        uses: docker/login-action@343f7c4344506bcbf9b4de18042ae17996df046d
+        with:
+          username: bmcclure89
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@8e5442c4ef9f78752691e2d8f8d19755c6f78e81
+        with:
+          tags: |
+            type=ref,event=pr
+            type=ref,event=branch
+            type=sha,format=long
+            type=raw,value=latest
+          images: |
+            ghcr.io/brandonmcclure/${{ env.IMAGE_NAME }}
+            bmcclure89/${{ env.IMAGE_NAME }}
+
+      - name: Build Docker image (non main branch)
+        uses: docker/build-push-action@4a13e500e55cf31b7a5d59a38ab2040ab0f42f56
+        if: github.ref != 'refs/heads/main'
+        with:
+          context: .
+          load: true
+          push: false
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }} 
+      - name: Build and push Docker image (main branch)
+        uses: docker/build-push-action@4a13e500e55cf31b7a5d59a38ab2040ab0f42f56
+        if: github.ref == 'refs/heads/main'
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }} 
